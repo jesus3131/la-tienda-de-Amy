@@ -8,9 +8,30 @@ if (fs.existsSync(envPath)) dotenv.config({ path: envPath });
 else dotenv.config();
 
 export const env = {
-  DATABASE_URL: process.env.DATABASE_URL || 'postgresql://erp:erp_dev_password@localhost:5432/erp_pos',
-  JWT_SECRET: process.env.JWT_SECRET || 'dev-secret-change-me',
+  DATABASE_URL: process.env.DATABASE_URL || '',
+  JWT_SECRET: process.env.JWT_SECRET || '',
   PORT: Number(process.env.PORT || 4000),
   NODE_ENV: process.env.NODE_ENV || 'development',
-  FRONTEND_ORIGIN: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
+  FRONTEND_ORIGIN: process.env.FRONTEND_ORIGIN || (process.env.NODE_ENV === 'development' ? 'http://localhost:5173' : ''),
+  SUPABASE_CA: process.env.SUPABASE_CA,
 };
+
+if (env.NODE_ENV === 'production') {
+  const missing = ['DATABASE_URL', 'JWT_SECRET', 'FRONTEND_ORIGIN'].filter((key) => !env[key as keyof typeof env]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required production environment variables: ${missing.join(', ')}`);
+  }
+  if (env.JWT_SECRET.length < 32) {
+    throw new Error('JWT_SECRET must be at least 32 characters in production');
+  }
+
+  let frontendOrigin: URL;
+  try {
+    frontendOrigin = new URL(env.FRONTEND_ORIGIN);
+  } catch {
+    throw new Error('FRONTEND_ORIGIN must be a valid HTTPS URL in production');
+  }
+  if (frontendOrigin.protocol !== 'https:' || frontendOrigin.username || frontendOrigin.password) {
+    throw new Error('FRONTEND_ORIGIN must use HTTPS in production');
+  }
+}

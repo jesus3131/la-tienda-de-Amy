@@ -31,6 +31,14 @@ app.use(cors({ origin: env.FRONTEND_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'erp-pos-backend' }));
+app.get('/ready', async (_req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ status: 'ready', service: 'erp-pos-backend' });
+  } catch {
+    res.status(503).json({ status: 'not_ready', service: 'erp-pos-backend' });
+  }
+});
 
 authRoutes(app);
 productRoutes(app);

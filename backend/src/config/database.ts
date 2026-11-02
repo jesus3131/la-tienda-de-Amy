@@ -3,7 +3,10 @@ import { env } from './env';
 
 const useSsl = env.DATABASE_URL.includes('sslmode=require') || env.NODE_ENV === 'production';
 const sslConfig = useSsl
-  ? { rejectUnauthorized: !!process.env.SUPABASE_CA, ca: process.env.SUPABASE_CA }
+  ? {
+      rejectUnauthorized: env.NODE_ENV === 'production' || Boolean(env.SUPABASE_CA),
+      ...(env.SUPABASE_CA ? { ca: env.SUPABASE_CA } : {}),
+    }
   : false;
 
 export const pool = new Pool({
@@ -11,6 +14,7 @@ export const pool = new Pool({
   max: 5,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
+  query_timeout: 5000,
   ssl: sslConfig,
 });
 

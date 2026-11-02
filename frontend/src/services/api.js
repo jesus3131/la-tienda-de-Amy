@@ -1,6 +1,9 @@
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
+if (import.meta.env.PROD && (!API_URL || !API_URL.startsWith('https://'))) {
+  throw new Error('VITE_API_URL must be an HTTPS URL in production');
+}
 const api = axios.create({ baseURL: `${API_URL}/api/v1` });
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');

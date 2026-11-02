@@ -7,6 +7,10 @@ export function initWebSocket(queryClient) {
   qc = queryClient;
   const token = localStorage.getItem('token');
   const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+  if (import.meta.env.PROD && !apiUrl.startsWith('https://')) {
+    console.error('VITE_API_URL must be an HTTPS URL in production');
+    return;
+  }
   const url = new URL(apiUrl);
   const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = url.host;
