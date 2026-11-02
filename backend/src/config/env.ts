@@ -17,7 +17,7 @@ export const env = {
 };
 
 if (env.NODE_ENV === 'production') {
-  const missing = ['DATABASE_URL', 'JWT_SECRET', 'FRONTEND_ORIGIN'].filter((key) => !env[key as keyof typeof env]);
+  const missing = ['DATABASE_URL', 'JWT_SECRET'].filter((key) => !env[key as keyof typeof env]);
   if (missing.length > 0) {
     throw new Error(`Missing required production environment variables: ${missing.join(', ')}`);
   }
@@ -25,13 +25,15 @@ if (env.NODE_ENV === 'production') {
     throw new Error('JWT_SECRET must be at least 32 characters in production');
   }
 
-  let frontendOrigin: URL;
-  try {
-    frontendOrigin = new URL(env.FRONTEND_ORIGIN);
-  } catch {
-    throw new Error('FRONTEND_ORIGIN must be a valid HTTPS URL in production');
-  }
-  if (frontendOrigin.protocol !== 'https:' || frontendOrigin.username || frontendOrigin.password) {
-    throw new Error('FRONTEND_ORIGIN must use HTTPS in production');
+  if (env.FRONTEND_ORIGIN) {
+    let frontendOrigin: URL;
+    try {
+      frontendOrigin = new URL(env.FRONTEND_ORIGIN);
+    } catch {
+      throw new Error('FRONTEND_ORIGIN must be a valid HTTPS URL in production');
+    }
+    if (frontendOrigin.protocol !== 'https:' || frontendOrigin.username || frontendOrigin.password) {
+      throw new Error('FRONTEND_ORIGIN must use HTTPS in production');
+    }
   }
 }

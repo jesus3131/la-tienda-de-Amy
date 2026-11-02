@@ -27,7 +27,18 @@ import { reportRoutes } from './modules/reports/presentation/reportController';
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false }));
-app.use(cors({ origin: env.FRONTEND_ORIGIN, credentials: true }));
+app.use(
+  cors({
+    origin: (requestOrigin, callback) => {
+      if (!requestOrigin || !env.FRONTEND_ORIGIN) {
+        callback(null, false);
+        return;
+      }
+      callback(null, requestOrigin === env.FRONTEND_ORIGIN);
+    },
+    credentials: true,
+  }),
+);
 app.use(express.json({ limit: '10mb' }));
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'erp-pos-backend' }));
