@@ -2,7 +2,7 @@ services:
   - type: web
     name: erp-pos-backend
     env: docker
-    dockerfilePath: ./backend/Dockerfile
+    dockerfilePath: ./Dockerfile
     rootDir: backend
     healthCheckPath: /health
     envVars:
