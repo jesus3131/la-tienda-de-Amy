@@ -1,9 +1,10 @@
 services:
   - type: web
     name: erp-pos-backend
-    env: node
-    buildCommand: npm ci && npm run build && npm run migrate
-    startCommand: npm start
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    rootDir: backend
+    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
@@ -15,4 +16,3 @@ services:
         sync: false
       - key: SUPABASE_CA
         sync: false
-    healthCheckPath: /health
