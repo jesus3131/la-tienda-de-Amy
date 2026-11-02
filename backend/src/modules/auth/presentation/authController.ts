@@ -1,0 +1,58 @@
+import { Request, Response } from 'express';
+import { z } from 'zod';
+import { LoginUseCase } from '../application/LoginUseCase';
+import { RegisterUseCase } from '../application/RegisterUseCase';
+import { SessionRepository } from '../infrastructure/SessionRepository';
+import { authenticate, AuthRequest } from '../../../shared/middleware/auth';
+import { pool } from '../../../config/database';
+
+const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
+const registerSchema = z.object({ email: z.string().email(), password: z.string().min(6), name: z.string().min(1), businessId: z.string().uuid().optional() });
+
+export const authController = {
+  async login(req: Request, res: Response) {
+    const body = loginSchema.parse(req.body);
+    const uc = new LoginUseCase();
+    const result = await uc.execute(body.email, body.password, {
+      deviceName: req.body.deviceName,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    res.json(result);
+  },
+  async register(req: Request, res: Response) {
+    const body = registerSchema.parse(req.body);
+    const uc = new RegisterUseCase();
+    const user = await uc.execute(body.email, body.password, body.name, body.businessId);
+    res.status(201).json(user);
+  },
+  async sessions(req: AuthRequest, res: Response) {
+    const repo = new SessionRepository();
+    res.json(await repo.listByUser(req.user!.id));
+  },
+  async revokeSession(req: AuthRequest, res: Response) {
+    const repo = new SessionRepository();
+    await repo.revoke(req.params.id, req.user!.id);
+    res.status(204).send();
+  },
+  async me(req: AuthRequest, res: Response) {
+    const { rows } = await pool.query(
+      `SELECT u.id,u.email,u.name,u.business_id, r.name as role
+       FROM users u LEFT JOIN user_roles ur ON ur.user_id=u.id LEFT JOIN roles r ON r.id=ur.role_id
+       WHERE u.id=$1`,
+      [req.user!.id],
+    );
+    res.json(rows[0]);
+  },
+};
+
+export function authRoutes(app: any) {
+  const express = require('express');
+  const router = express.Router();
+  router.post('/login', authController.login);
+  router.post('/register', authController.register);
+  router.get('/me', authenticate, authController.me);
+  router.get('/sessions', authenticate, authController.sessions);
+  router.post('/sessions/:id/revoke', authenticate, authController.revokeSession);
+  app.use('/api/v1/auth', router);
+}

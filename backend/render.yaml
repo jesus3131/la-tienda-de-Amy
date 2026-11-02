@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: erp-pos-backend
+    env: node
+    buildCommand: npm ci && npm run build && npm run migrate
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: SUPABASE_CA
+        sync: false
+    healthCheckPath: /health

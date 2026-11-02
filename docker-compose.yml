@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: erp-pos-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: erp_dev_password
+      POSTGRES_DB: erp_pos
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/migrations/000_init.sql:/docker-entrypoint-initdb.d/000_init.sql
+    networks:
+      - erp-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp -d erp_pos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: erp-pos-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - erp-net
+
+volumes:
+  pgdata:
+
+networks:
+  erp-net:
+    driver: bridge
