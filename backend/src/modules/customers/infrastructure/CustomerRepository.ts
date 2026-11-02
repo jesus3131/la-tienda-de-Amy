@@ -15,14 +15,16 @@ export class CustomerRepository {
     );
     return rows[0];
   }
-  async update(id: string, data: any) {
+  async update(id: string, data: any, businessId?: string) {
     const fields: string[] = []; const params: any[] = [];
     const map: any = { name:'name', documentId:'document_id', phone:'phone', email:'email', address:'address', notes:'notes', isActive:'is_active' };
     for (const [k,col] of Object.entries(map)) if (data[k]!==undefined){ params.push(data[k]); fields.push(`${col}=$${params.length}`); }
     if(!fields.length) return null;
     params.push(id);
-    const {rows}=await pool.query(`UPDATE customers SET ${fields.join(',')}, updated_at=NOW() WHERE id=$${params.length} RETURNING *`,params);
-    return rows[0];
+    let where = `id=$${params.length}`;
+    if (businessId) { params.push(businessId); where += ` AND business_id=$${params.length}`; }
+    const {rows}=await pool.query(`UPDATE customers SET ${fields.join(',')}, updated_at=NOW() WHERE ${where} RETURNING *`,params);
+    return rows[0] || null;
   }
-  async findById(id:string){ const {rows}=await pool.query('SELECT * FROM customers WHERE id=$1',[id]); return rows[0]||null; }
+  async findById(id:string, businessId?:string){ const params:any[]=[id]; let where='WHERE id=$1'; if(businessId){ params.push(businessId); where+=' AND business_id=$'+params.length; } const {rows}=await pool.query(`SELECT * FROM customers ${where}`,params); return rows[0]||null; }
 }

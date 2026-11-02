@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: erp-pos-backend
+    name: la-tienda-de-amy-api
     env: docker
     plan: free
     dockerfilePath: ./Dockerfile

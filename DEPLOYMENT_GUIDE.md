@@ -3,15 +3,17 @@
 ## Backend (Render o similar)
 
 1. Conectar repositorio GitHub.
-2. Build command: `npm ci && npm run build && npm run migrate`
+2. Build command: `npm ci && npm run build`
 3. Start command: `npm start`
-4. Variables de entorno:
+4. Ejecutar `npm run migrate` como job de despliegue controlado antes de iniciar
+   una versión que requiera cambios de esquema.
+5. Variables de entorno:
    - NODE_ENV=production
    - DATABASE_URL (Supabase Session Pooler)
    - JWT_SECRET
    - FRONTEND_ORIGIN
    - SUPABASE_CA (opcional)
-5. Health check: `/health`
+6. Health check: `/health`; readiness: `/ready`
 
 ## Frontend (Vercel o similar)
 

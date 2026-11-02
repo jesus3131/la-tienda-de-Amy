@@ -10,8 +10,8 @@ const schema = z.object({ name: z.string().min(1), company: z.string().optional(
 export const supplierController = {
   async list(req: Request, res: Response) { const bid=getBusinessId(req); const repo=new SupplierRepository(); res.json(await repo.list(bid, req.query.search as string)); },
   async create(req: Request, res: Response) { const body=schema.parse(req.body); const bid=getBusinessId(req); const repo=new SupplierRepository(); res.status(201).json(await repo.create({...body,businessId:bid})); },
-  async update(req: Request, res: Response) { const body=schema.partial().parse(req.body); const repo=new SupplierRepository(); res.json(await repo.update(req.params.id,body)); },
-  async get(req: Request, res: Response) { const repo=new SupplierRepository(); res.json(await repo.findById(req.params.id)); },
+  async update(req: Request, res: Response) { const body=schema.partial().parse(req.body); const bid=getBusinessId(req); const repo=new SupplierRepository(); const s=await repo.update(req.params.id,body,bid); if(!s) throw new (require('../../../shared/errors/AppError').NotFoundError)('Supplier',req.params.id); res.json(s); },
+  async get(req: Request, res: Response) { const bid=getBusinessId(req); const repo=new SupplierRepository(); const s=await repo.findById(req.params.id,bid); if(!s) throw new (require('../../../shared/errors/AppError').NotFoundError)('Supplier',req.params.id); res.json(s); },
 };
 
 export function supplierRoutes(app:any){ const express=require('express'); const r=express.Router(); r.get('/',authenticate,supplierController.list); r.get('/:id',authenticate,supplierController.get); r.post('/',authenticate,requireRole('admin','supervisor','warehouse'),supplierController.create); r.put('/:id',authenticate,requireRole('admin','supervisor','warehouse'),supplierController.update); app.use('/api/v1/suppliers',r); }

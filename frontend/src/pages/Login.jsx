@@ -14,7 +14,7 @@ export default function Login() {
     e.preventDefault();
     try {
       const { data } = await api.post('/auth/login', { email, password });
-      setAuth(data.token, data.user);
+      setAuth(data.token, data.user, data.refreshToken);
       navigate('/');
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Error de login');

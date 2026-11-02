@@ -1,13 +1,18 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { InventoryRepository } from '../infrastructure/InventoryRepository';
-import { DEFAULT_BUSINESS_ID, DEFAULT_WAREHOUSE_ID } from '../../../shared/constants/defaults';
-import { getBusinessId } from '../../../shared/utils/tenant';
+import { getBusinessId, assertWarehouseAccess } from '../../../shared/utils/tenant';
 import { authenticate, requireRole } from '../../../shared/middleware/auth';
 import { broadcast } from '../../../shared/websocket/wsServer';
 import { logAudit } from '../../../shared/audit/auditLogger';
 
-const adjustSchema = z.object({ productId: z.string().uuid(), warehouseId: z.string().uuid().optional(), quantity: z.number(), type: z.string(), reason: z.string().optional() });
+const adjustSchema = z.object({
+  productId: z.string().uuid(),
+  warehouseId: z.string().uuid(),
+  quantity: z.number().finite(),
+  type: z.enum(['entry', 'exit', 'adjustment', 'return', 'transfer', 'expiry', 'merma']),
+  reason: z.string().trim().min(1).max(500).optional(),
+});
 
 export const inventoryController = {
   async list(req: Request, res: Response) {
@@ -19,15 +24,16 @@ export const inventoryController = {
     const body = adjustSchema.parse(req.body);
     const bid = getBusinessId(req);
     const repo = new InventoryRepository();
-    const wh = body.warehouseId || DEFAULT_WAREHOUSE_ID;
-    const result = await repo.adjust({ productId: body.productId, warehouseId: wh, quantity: body.quantity, type: body.type, reason: body.reason, userId: (req as any).user?.id, businessId: bid });
+    const warehouse = await assertWarehouseAccess(req, body.warehouseId);
+    const result = await repo.adjust({ productId: body.productId, warehouseId: body.warehouseId, quantity: body.quantity, type: body.type, reason: body.reason, userId: (req as any).user?.id, businessId: bid, branchId: warehouse.branchId });
     await logAudit({ businessId: bid, userId: (req as any).user?.id, action: 'inventory.adjust', entityType: 'product', entityId: body.productId, after: { quantity: body.quantity, type: body.type }, ip: req.ip });
-    broadcast({ type: 'inventory.updated', payload: { productId: body.productId } });
+    broadcast({ type: 'inventory.updated', payload: { productId: body.productId }, businessId: bid });
     res.json(result);
   },
   async movements(req: Request, res: Response) {
+    const bid = getBusinessId(req);
     const repo = new InventoryRepository();
-    res.json(await repo.movements(req.query.productId as string, Number(req.query.limit || 100)));
+    res.json(await repo.movements(req.query.productId as string, bid, Number(req.query.limit || 100)));
   },
   async alerts(req: Request, res: Response) {
     const bid = getBusinessId(req);
@@ -45,4 +51,3 @@ export function inventoryRoutes(app: any) {
   r.get('/alerts', authenticate, inventoryController.alerts);
   app.use('/api/v1/inventory', r);
 }
-

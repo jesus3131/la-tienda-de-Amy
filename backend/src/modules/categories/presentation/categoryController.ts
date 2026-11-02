@@ -21,8 +21,11 @@ export const categoryController = {
   },
   async update(req: Request, res: Response) {
     const body = schema.partial().parse(req.body);
+    const bid = getBusinessId(req);
     const repo = new CategoryRepository();
-    res.json(await repo.update(req.params.id, body));
+    const c = await repo.update(req.params.id, body, bid);
+    if (!c) throw new (require('../../../shared/errors/AppError').NotFoundError)('Category', req.params.id);
+    res.json(c);
   },
 };
 

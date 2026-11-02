@@ -376,6 +376,8 @@ CREATE TABLE IF NOT EXISTS cash_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_cash_sessions_register ON cash_sessions(cash_register_id);
 CREATE INDEX IF NOT EXISTS idx_cash_sessions_status ON cash_sessions(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_open_cash_session
+ON cash_sessions(cash_register_id) WHERE status='open';
 
 CREATE TABLE IF NOT EXISTS cash_movements (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -408,6 +410,8 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     ip_address VARCHAR(50),
     user_agent TEXT,
     token_hash TEXT,
+    refresh_token_hash TEXT,
+    refresh_expires_at TIMESTAMPTZ,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     last_activity TIMESTAMPTZ DEFAULT NOW(),

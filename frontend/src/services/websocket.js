@@ -1,4 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
+import { getSelectedApiUrl } from './connection';
 
 let socket = null;
 let qc = null;
@@ -6,8 +7,9 @@ let qc = null;
 export function initWebSocket(queryClient) {
   qc = queryClient;
   const token = localStorage.getItem('token');
-  const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-  if (import.meta.env.PROD && !apiUrl.startsWith('https://')) {
+  let apiUrl = window.location.origin;
+  try { apiUrl = getSelectedApiUrl() || window.location.origin; } catch {}
+  if (import.meta.env.PROD && apiUrl && !apiUrl.startsWith('https://') && localStorage.getItem('apiTarget') !== 'local') {
     console.error('VITE_API_URL must be an HTTPS URL in production');
     return;
   }

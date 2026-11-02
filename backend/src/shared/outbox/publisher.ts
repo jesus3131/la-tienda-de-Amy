@@ -13,7 +13,7 @@ export async function processOutbox() {
     );
     for (const ev of rows) {
       try {
-        broadcast({ type: ev.event_type, payload: ev.payload });
+        broadcast({ type: ev.event_type, payload: ev.payload, businessId: ev.payload?.businessId || null });
         await pool.query('UPDATE outbox_events SET published=true WHERE id=$1', [ev.id]);
       } catch (e) {
         const retry = (ev.retry_count || 0) + 1;

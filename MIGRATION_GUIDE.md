@@ -37,6 +37,12 @@ SUPABASE_CA=<certificado CA si aplica>
 11. Probar login, ventas, inventario, auditoría, sesiones.
 12. Mantener Docker local como respaldo temporal.
 
+Las migraciones se ejecutan mediante `npm run migrate`. El migrador crea
+`schema_migrations`, toma un advisory lock de PostgreSQL y aplica únicamente
+los archivos versionados (`000_*.sql`, `001_*.sql`, etc.) que aún no estén
+registrados. No se debe ejecutar SQL manualmente en producción salvo para una
+recuperación documentada.
+
 ## 4. Seguridad y RLS
 
 - Backend Express es el único acceso a PostgreSQL.

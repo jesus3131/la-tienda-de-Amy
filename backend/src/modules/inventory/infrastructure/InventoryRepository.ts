@@ -1,5 +1,5 @@
 import { pool } from '../../../config/database';
-import { DEFAULT_WAREHOUSE_ID } from '../../../shared/constants/defaults';
+import { ValidationError } from '../../../shared/errors/AppError';
 
 export class InventoryRepository {
   async getStock(productId: string, warehouseId: string) {
@@ -17,6 +17,7 @@ export class InventoryRepository {
        LEFT JOIN inventory i ON i.product_id=p.id
        LEFT JOIN warehouses w ON w.id=i.warehouse_id
        ${where}
+       GROUP BY p.id, p.name, p.sku, p.min_stock, i.warehouse_id, w.name
        ORDER BY p.name`,
       params,
     );
@@ -29,13 +30,17 @@ export class InventoryRepository {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      if (params.businessId) {
+        const { rows: p } = await client.query('SELECT id FROM products WHERE id=$1 AND business_id=$2', [params.productId, params.businessId]);
+        if (p.length === 0) throw new ValidationError('Producto no encontrado en la empresa');
+      }
       const { rows: invRows } = await client.query(
         'SELECT quantity FROM inventory WHERE product_id=$1 AND warehouse_id=$2 FOR UPDATE',
         [params.productId, params.warehouseId],
       );
       const before = invRows.length ? Number(invRows[0].quantity) : 0;
       const after = before + params.quantity;
-      if (after < 0) throw new Error('Inventario insuficiente');
+      if (after < 0) throw new ValidationError('Inventario insuficiente');
       if (invRows.length) {
         await client.query('UPDATE inventory SET quantity=$1, updated_at=NOW() WHERE product_id=$2 AND warehouse_id=$3', [after, params.productId, params.warehouseId]);
       } else {
@@ -56,10 +61,12 @@ export class InventoryRepository {
     }
   }
 
-  async movements(productId?: string, limit = 100) {
+  async movements(productId?: string, businessId?: string, limit = 100) {
     const params: any[] = [];
-    let where = '';
-    if (productId) { params.push(productId); where = 'WHERE product_id=$1'; }
+    const conds: string[] = [];
+    if (productId) { params.push(productId); conds.push(`m.product_id=$${params.length}`); }
+    if (businessId) { params.push(businessId); conds.push(`m.business_id=$${params.length}`); }
+    const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
     params.push(limit);
     const { rows } = await pool.query(
       `SELECT m.*, p.name as product_name FROM inventory_movements m LEFT JOIN products p ON p.id=m.product_id ${where} ORDER BY m.created_at DESC LIMIT $${params.length}`,
@@ -79,13 +86,15 @@ export class InventoryRepository {
     const { rows: expired } = await pool.query(
       `SELECT pb.id,pb.product_id,p.name,pb.batch_number,pb.quantity,pb.expiry_date
        FROM product_batches pb JOIN products p ON p.id=pb.product_id
-       WHERE pb.expiry_date IS NOT NULL AND pb.expiry_date <= CURRENT_DATE AND pb.quantity>0`,
+     WHERE p.business_id=$1 AND pb.expiry_date IS NOT NULL AND pb.expiry_date <= CURRENT_DATE AND pb.quantity>0`,
+    [businessId],
     );
     const { rows: soon } = await pool.query(
       `SELECT pb.id,pb.product_id,p.name,pb.batch_number,pb.quantity,pb.expiry_date
        FROM product_batches pb JOIN products p ON p.id=pb.product_id
-       WHERE pb.expiry_date IS NOT NULL AND pb.expiry_date > CURRENT_DATE AND pb.expiry_date <= CURRENT_DATE + INTERVAL '30 days' AND pb.quantity>0
+     WHERE p.business_id=$1 AND pb.expiry_date IS NOT NULL AND pb.expiry_date > CURRENT_DATE AND pb.expiry_date <= CURRENT_DATE + INTERVAL '30 days' AND pb.quantity>0
        ORDER BY pb.expiry_date`,
+    [businessId],
     );
     return { lowStock: low, expired, expiringSoon: soon };
   }

@@ -1,4 +1,5 @@
 import { pool } from '../../../config/database';
+import { ValidationError } from '../../../shared/errors/AppError';
 
 export class PurchaseRepository {
   async list(businessId: string, status?: string) {
@@ -12,8 +13,11 @@ export class PurchaseRepository {
     return rows;
   }
 
-  async findById(id: string) {
-    const { rows: po } = await pool.query('SELECT * FROM purchase_orders WHERE id=$1', [id]);
+  async findById(id: string, businessId?: string) {
+    const params: any[] = [id];
+    let where = 'WHERE id=$1';
+    if (businessId) { params.push(businessId); where += ` AND business_id=$${params.length}`; }
+    const { rows: po } = await pool.query(`SELECT * FROM purchase_orders ${where}`, params);
     if (!po[0]) return null;
     const { rows: items } = await pool.query('SELECT * FROM purchase_order_items WHERE purchase_order_id=$1', [id]);
     return { ...po[0], items };
@@ -23,6 +27,16 @@ export class PurchaseRepository {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      const { rows: supplier } = await client.query(
+        'SELECT id FROM suppliers WHERE id=$1 AND business_id=$2 AND is_active=true',
+        [data.supplierId, data.businessId],
+      );
+      if (supplier.length === 0) throw new ValidationError('Proveedor no válido');
+      const { rows: branch } = await client.query(
+        'SELECT id FROM branches WHERE id=$1 AND business_id=$2 AND is_active=true',
+        [data.branchId, data.businessId],
+      );
+      if (branch.length === 0) throw new ValidationError('Sucursal no válida');
       const { rows } = await client.query(
         `INSERT INTO purchase_orders (business_id,branch_id,supplier_id,status,notes,created_by) VALUES ($1,$2,$3,'draft',$4,$5) RETURNING *`,
         [data.businessId, data.branchId || null, data.supplierId, data.notes || null, data.userId || null],
@@ -30,6 +44,11 @@ export class PurchaseRepository {
       const po = rows[0];
       let subtotal = 0; let taxTotal = 0;
       for (const it of data.items) {
+        const { rows: product } = await client.query(
+          'SELECT id FROM products WHERE id=$1 AND business_id=$2 AND is_active=true',
+          [it.productId, data.businessId],
+        );
+        if (product.length === 0) throw new ValidationError('Producto no válido');
         const lineTotal = Number(it.quantity) * Number(it.unitCost);
         const tax = lineTotal * (Number(it.taxRate || 0) / 100);
         subtotal += lineTotal; taxTotal += tax;
@@ -49,25 +68,50 @@ export class PurchaseRepository {
     }
   }
 
-  async updateStatus(id: string, status: string) {
-    const { rows } = await pool.query('UPDATE purchase_orders SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *', [status, id]);
-    return rows[0];
+  async updateStatus(id: string, status: string, businessId?: string) {
+    const params: any[] = [status, id];
+    let where = 'WHERE id=$2';
+    if (businessId) { params.push(businessId); where += ` AND business_id=$${params.length}`; }
+    const { rows } = await pool.query(`UPDATE purchase_orders SET status=$1, updated_at=NOW() ${where} RETURNING *`, params);
+    return rows[0] || null;
   }
 
-  async receive(data: { purchaseOrderId: string; warehouseId: string; items: Array<{ purchaseOrderItemId: string; productId: string; quantity: number; expiryDate?: string; batchNumber?: string }>; userId?: string }) {
+  async receive(data: { purchaseOrderId: string; warehouseId: string; items: Array<{ purchaseOrderItemId: string; productId: string; quantity: number; expiryDate?: string; batchNumber?: string }>; userId?: string; businessId?: string }) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const { rows: poRows } = await client.query('SELECT * FROM purchase_orders WHERE id=$1 FOR UPDATE', [data.purchaseOrderId]);
+      const params: any[] = [data.purchaseOrderId];
+      let where = 'WHERE id=$1';
+      if (data.businessId) { params.push(data.businessId); where += ` AND business_id=$${params.length}`; }
+      const { rows: poRows } = await client.query(`SELECT * FROM purchase_orders ${where} FOR UPDATE`, params);
       const po = poRows[0];
-      if (!po) throw new Error('Orden no encontrada');
-      if (po.status === 'received' || po.status === 'cancelled') throw new Error('Orden no recepcionable');
+      if (!po) throw new ValidationError('Orden no encontrada');
+      if (po.status === 'received' || po.status === 'cancelled') throw new ValidationError('Orden no recepcionable');
+      const { rows: warehouse } = await client.query(
+        `SELECT w.id FROM warehouses w
+         JOIN branches b ON b.id=w.branch_id
+         WHERE w.id=$1 AND w.branch_id=$2 AND b.business_id=$3`,
+        [data.warehouseId, po.branch_id, po.business_id],
+      );
+      if (warehouse.length === 0) throw new ValidationError('Almacén no válido para la orden');
       // create receipt
       const { rows: gr } = await client.query(
         `INSERT INTO goods_receipts (purchase_order_id,warehouse_id,received_by) VALUES ($1,$2,$3) RETURNING *`,
         [data.purchaseOrderId, data.warehouseId, data.userId || null],
       );
       for (const it of data.items) {
+        const { rows: orderItem } = await client.query(
+          `SELECT poi.product_id, poi.quantity, poi.received_quantity
+           FROM purchase_order_items poi
+           JOIN products p ON p.id=poi.product_id AND p.business_id=$3
+           WHERE poi.id=$1 AND poi.purchase_order_id=$2
+           FOR UPDATE`,
+          [it.purchaseOrderItemId, data.purchaseOrderId, po.business_id],
+        );
+        if (orderItem.length === 0 || orderItem[0].product_id !== it.productId) throw new ValidationError('Ítem de compra no válido');
+        if (Number(it.quantity) > Number(orderItem[0].quantity) - Number(orderItem[0].received_quantity)) {
+          throw new ValidationError('Cantidad recibida supera la cantidad pendiente');
+        }
         // batch
         let batchId: string | null = null;
         if (it.expiryDate) {

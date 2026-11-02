@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import { env } from '../../config/env';
 import { pool } from '../../config/database';
 import { ForbiddenError } from '../errors/AppError';
+import { SessionRepository } from '../../modules/auth/infrastructure/SessionRepository';
+import { tenantContext } from '../utils/tenantContext';
 
 export interface AuthRequest extends Request {
   user?: { id: string; email: string; role: string; businessId?: string; branchIds: string[] };
@@ -15,14 +17,18 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
   }
   const token = header.slice(7);
   try {
-    const payload = jwt.verify(token, env.JWT_SECRET) as any;
+    const payload = jwt.verify(token, env.JWT_SECRET) as jwt.JwtPayload & { userId?: string };
+    const userId = payload.userId;
+    if (!userId || !(await tenantContext.run({ userId }, () => new SessionRepository().validate(token, userId)))) {
+      return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Sesión revocada o inválida' } });
+    }
     const { rows } = await pool.query(
       `SELECT u.id,u.email,u.business_id, r.name as role
        FROM users u
        LEFT JOIN user_roles ur ON ur.user_id=u.id
        LEFT JOIN roles r ON r.id=ur.role_id
        WHERE u.id=$1 AND u.is_active=true`,
-      [payload.userId],
+      [userId],
     );
     if (rows.length === 0) {
       return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Usuario inválido' } });
@@ -39,7 +45,7 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
       businessId: u.business_id,
       branchIds: branches.map((b: any) => b.branch_id),
     };
-    next();
+    tenantContext.run({ businessId: u.business_id, userId: u.id }, next);
   } catch (e) {
     return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Token inválido o expirado' } });
   }

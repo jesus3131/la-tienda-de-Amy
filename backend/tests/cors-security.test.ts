@@ -98,6 +98,7 @@ describe('authentication and authorization contract', () => {
     vi.doMock('../src/config/database', () => ({
       pool: {
         query: vi.fn()
+          .mockResolvedValueOnce({ rows: [{ id: 'session-1' }] })
           .mockResolvedValueOnce({ rows: [{ id: 'user-1', email: 'test@example.com', business_id: 'business-1', role: 'cashier' }] })
           .mockResolvedValueOnce({ rows: [{ branch_id: 'branch-1' }] }),
       },

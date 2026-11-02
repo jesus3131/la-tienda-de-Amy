@@ -1,14 +1,17 @@
 # Estado de producción — La tienda de Amy
 
+> Este documento debe actualizarse con evidencia del entorno desplegado. Los
+> cambios locales no equivalen a un despliegue cloud ejecutado.
+
 | Componente | Estado | Evidencia |
 |---|---|---|
-| Supabase PostgreSQL | APROBADO | Conexión real verificada (Session Pooler, us-east-1, PostgreSQL 17.11) |
+| Supabase PostgreSQL | APROBADO | PostgreSQL 17.11; RLS aplicado y validado con app_user sin BYPASSRLS |
 | 36 tablas | APROBADO | 36 creadas, conteos idénticos a local |
 | Migración de datos | APROBADO | Backup 90 KB restaurado, 0 errores |
 | Integridad referencial | APROBADO | 0 violaciones FK |
-| Backend cloud | BLOQUEADO POR CREDENCIALES | Dockerfile + render.yaml preparados; imagen Docker probada contra Supabase (health OK) |
-| Frontend cloud | BLOQUEADO POR CREDENCIALES | vercel.json preparado; build OK |
-| HTTPS | BLOQUEADO POR CREDENCIALES | Proveedores lo proveen automáticamente |
+| Backend cloud | BLOQUEADO | Render no autenticado; Dockerfile + render.yaml preparados |
+| Frontend cloud | BLOQUEADO | Vercel no autenticado; vercel.json preparado |
+| HTTPS | BLOQUEADO | No existen URLs desplegadas que verificar |
 | RBAC | APROBADO | Tests: admin crea producto, cashier 403 |
 | Multiempresa y depósitos | PENDIENTE | Requiere despliegue y prueba multidispositivo |
 | WebSockets | APROBADO | Autenticado por JWT; outbox distribuye eventos |
@@ -17,8 +20,8 @@
 | Inventario | APROBADO | Ajuste + venta verificados en cloud |
 | Offline | APROBADO | Implementado (cola localStorage + sync) |
 | Backups | APROBADO | pg_dump/restore probados (90 KB) |
-| Acceso multidispositivo | BLOQUEADO POR CREDENCIALES | Requiere despliegue cloud |
-| PC principal apagado | BLOQUEADO POR CREDENCIALES | Requiere despliegue cloud |
+| Acceso multidispositivo | PENDIENTE | Requiere despliegue cloud |
+| PC principal apagado | PENDIENTE | Requiere despliegue cloud |
 
 ## Lo que se ejecutó
 - Auditoría integral del proyecto.

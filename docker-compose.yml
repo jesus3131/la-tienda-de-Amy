@@ -22,6 +22,28 @@ services:
       timeout: 3s
       retries: 10
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://erp:erp_dev_password@postgres:5432/erp_pos
+      JWT_SECRET: ${LOCAL_JWT_SECRET:?Set LOCAL_JWT_SECRET in the environment before starting the local stack}
+      PORT: 4000
+      HOST: 0.0.0.0
+      NODE_ENV: development
+      NODE_ROLE: local
+      NODE_ID: local-primary
+      FRONTEND_ORIGIN: http://localhost:5173
+      FRONTEND_ORIGINS: ${LOCAL_FRONTEND_ORIGINS:-}
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - erp-net
+
   redis:
     image: redis:7-alpine
     container_name: erp-pos-redis

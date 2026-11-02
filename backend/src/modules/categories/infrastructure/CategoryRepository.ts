@@ -12,14 +12,16 @@ export class CategoryRepository {
     );
     return rows[0];
   }
-  async update(id: string, data: any) {
+  async update(id: string, data: any, businessId?: string) {
     const fields: string[] = []; const params: any[] = [];
     if (data.name !== undefined) { params.push(data.name); fields.push(`name=$${params.length}`); }
     if (data.description !== undefined) { params.push(data.description); fields.push(`description=$${params.length}`); }
     if (data.isActive !== undefined) { params.push(data.isActive); fields.push(`is_active=$${params.length}`); }
     if (fields.length === 0) return null;
     params.push(id);
-    const { rows } = await pool.query(`UPDATE categories SET ${fields.join(',')}, updated_at=NOW() WHERE id=$${params.length} RETURNING *`, params);
-    return rows[0];
+    let where = `id=$${params.length}`;
+    if (businessId) { params.push(businessId); where += ` AND business_id=$${params.length}`; }
+    const { rows } = await pool.query(`UPDATE categories SET ${fields.join(',')}, updated_at=NOW() WHERE ${where} RETURNING *`, params);
+    return rows[0] || null;
   }
 }

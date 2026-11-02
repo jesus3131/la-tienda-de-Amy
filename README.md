@@ -19,13 +19,27 @@ Módulos: auth, users/roles, businesses/branches, products, categories, inventor
 ## Ejecutar en local
 
 ```bash
+$env:LOCAL_JWT_SECRET = "use-a-local-secret-of-at-least-32-characters"
 docker compose up -d
 cd backend && cp .env.example .env && npm install && npm run dev
 cd frontend && npm install && npm run dev
 ```
 
-Backend: http://localhost:4000 (health: /health, Swagger no incluido aún)
+The Compose backend runs as the local node (`NODE_ROLE=local`, `NODE_ID=local-primary`) and uses the persistent PostgreSQL volume. Its status is available at `http://localhost:4000/sync/status`; it reports that synchronization is not configured until the later sync phase.
+
+Backend: http://localhost:4000 (health: /health, readiness: /ready)
 Frontend: http://localhost:5173
+
+For LAN access, bind the backend to the host computer's LAN interface (`HOST=0.0.0.0`) and add each exact browser origin to `LOCAL_FRONTEND_ORIGINS`, separated by commas. Configure the frontend with `VITE_LOCAL_API_URL=http://<LAN-HOST>:4000`, then explicitly select the local target in the browser:
+
+```js
+localStorage.setItem('localApiUrl', 'http://<LAN-HOST>:4000');
+localStorage.setItem('apiTarget', 'local');
+```
+
+The application does not switch targets automatically. Use `apiTarget=central` to return to the central backend. Do not expose port 4000 directly to the Internet; restrict it to the trusted LAN using the host firewall/router.
+
+The application displays the selected node and the number of unprocessed Outbox events. A local operation is considered confirmed only after the local API returns success; browser `localStorage` is only a pending queue and is not the source of truth for sales, inventory, cash, purchases, or reports. Central synchronization remains disabled until the synchronization phase.
 
 Credenciales seed: admin@erp.local / admin123
 
@@ -67,6 +81,18 @@ El frontend nunca se conecta directamente a PostgreSQL; toda comunicación pasa 
 cd backend && npm test
 cd frontend && npm run build
 ```
+
+## Estado de producción
+
+El proyecto incluye controles de aislamiento por empresa, sucursal y almacén,
+sesiones revocables, migraciones versionadas, cola offline durable en IndexedDB
+y validaciones server-side para ventas, caja, compras e inventario. Antes de
+producción deben ejecutarse los builds, tests, migraciones y pruebas
+multidispositivo en un entorno staging con credenciales del proveedor.
+
+El despliegue externo no se considera realizado hasta verificar las URLs,
+variables secretas, HTTPS, restauración de backups y acceso desde dispositivos
+externos. El registro público está deshabilitado cuando `NODE_ENV=production`.
 
 ## Mejoras implementadas
 

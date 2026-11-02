@@ -1,4 +1,6 @@
 import { pool } from '../../../config/database';
+import { ValidationError } from '../../../shared/errors/AppError';
+import crypto from 'crypto';
 
 export class SalesRepository {
   async list(businessId: string, filters: any = {}) {
@@ -16,8 +18,11 @@ export class SalesRepository {
     return rows;
   }
 
-  async findById(id: string) {
-    const { rows: sale } = await pool.query('SELECT * FROM sales WHERE id=$1', [id]);
+  async findById(id: string, businessId?: string) {
+    const params: any[] = [id];
+    let where = 'WHERE id=$1';
+    if (businessId) { params.push(businessId); where += ` AND business_id=$${params.length}`; }
+    const { rows: sale } = await pool.query(`SELECT * FROM sales ${where}`, params);
     if (!sale[0]) return null;
     const { rows: items } = await pool.query(
       `SELECT si.*, p.name as product_name FROM sale_items si JOIN products p ON p.id=si.product_id WHERE si.sale_id=$1`,
@@ -31,60 +36,76 @@ export class SalesRepository {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      const scopedIdempotencyKey = data.idempotencyKey
+        ? crypto.createHash('sha256').update(`${data.businessId}:${data.idempotencyKey}`).digest('hex')
+        : null;
 
       // idempotency check
-      if (data.idempotencyKey) {
-        const { rows: existing } = await client.query('SELECT response FROM idempotency_keys WHERE key=$1', [data.idempotencyKey]);
+      if (scopedIdempotencyKey) {
+        const { rows: existing } = await client.query('SELECT response FROM idempotency_keys WHERE key=$1', [scopedIdempotencyKey]);
         if (existing.length) {
           const resp = existing[0].response;
           await client.query('ROLLBACK');
-          return this.findById(resp.saleId);
+          return this.findById(resp.saleId, data.businessId);
         }
       }
 
       // validate products & stock
       const productIds = data.items.map((i: any) => i.productId);
-      const { rows: products } = await client.query('SELECT * FROM products WHERE id = ANY($1::uuid[])', [productIds]);
-      const pmap = new Map(products.map((p: any) => [p.id, p]));
+      const { rows: products } = await client.query(
+        'SELECT * FROM products WHERE id = ANY($1::uuid[]) AND business_id=$2',
+        [productIds, data.businessId],
+      );
+      const pmap = new Map<string, any>(products.map((p: any) => [p.id, p] as [string, any]));
+      if (data.customerId) {
+        const { rows: customer } = await client.query(
+          'SELECT id FROM customers WHERE id=$1 AND business_id=$2 AND is_active=true',
+          [data.customerId, data.businessId],
+        );
+        if (customer.length === 0) throw new ValidationError('Cliente no válido');
+      }
 
       // check stock per warehouse
       for (const it of data.items) {
         const p = pmap.get(it.productId);
-        if (!p || !p.is_active) throw new Error(`Producto no válido: ${it.productId}`);
+        if (!p || !p.is_active) throw new ValidationError(`Producto no válido: ${it.productId}`);
         const { rows: inv } = await client.query(
           'SELECT quantity FROM inventory WHERE product_id=$1 AND warehouse_id=$2 FOR UPDATE',
           [it.productId, data.warehouseId],
         );
         const stock = inv.length ? Number(inv[0].quantity) : 0;
-        if (stock < Number(it.quantity)) throw new Error(`Stock insuficiente para ${p.name}`);
+        if (stock < Number(it.quantity)) throw new ValidationError(`Stock insuficiente para ${p.name}`);
       }
 
       // sale totals
       let subtotal = 0; let taxTotal = 0; let discountTotal = 0;
       for (const it of data.items) {
         const p = pmap.get(it.productId)!;
-        const price = it.unitPrice ?? Number(p.sale_price);
+        const price = Number(p.sale_price);
         const line = Number(it.quantity) * price;
         const disc = Number(it.discount || 0);
-        const tax = (line - disc) * (Number(it.taxRate ?? p.tax_rate ?? 0) / 100);
+        if (disc < 0 || disc > line) throw new ValidationError(`Descuento inválido para ${p.name}`);
+        const tax = (line - disc) * (Number(p.tax_rate || 0) / 100);
         subtotal += line; discountTotal += disc; taxTotal += tax;
       }
       const total = subtotal - discountTotal + taxTotal;
+      const paymentsTotal = (data.payments || []).reduce((sum: number, payment: any) => sum + Number(payment.amount), 0);
+      if (Math.abs(paymentsTotal - total) > 0.01) throw new ValidationError('El total de pagos no coincide con la venta');
 
       // insert sale
       const { rows: saleRows } = await client.query(
         `INSERT INTO sales (business_id,branch_id,warehouse_id,customer_id,cash_session_id,user_id,status,subtotal,tax_total,discount_total,total,idempotency_key,notes)
          VALUES ($1,$2,$3,$4,$5,$6,'completed',$7,$8,$9,$10,$11,$12) RETURNING *`,
-        [data.businessId, data.branchId, data.warehouseId, data.customerId || null, data.cashSessionId || null, data.userId || null, subtotal, taxTotal, discountTotal, total, data.idempotencyKey || null, data.notes || null],
+        [data.businessId, data.branchId, data.warehouseId, data.customerId || null, data.cashSessionId || null, data.userId || null, subtotal, taxTotal, discountTotal, total, scopedIdempotencyKey, data.notes || null],
       );
       const sale = saleRows[0];
 
       for (const it of data.items) {
         const p = pmap.get(it.productId)!;
-        const price = it.unitPrice ?? Number(p.sale_price);
+        const price = Number(p.sale_price);
         const qty = Number(it.quantity);
         const disc = Number(it.discount || 0);
-        const taxRate = Number(it.taxRate ?? p.tax_rate ?? 0);
+        const taxRate = Number(p.tax_rate || 0);
         const lineTotal = qty * price - disc + (qty * price - disc) * (taxRate / 100);
         // batch selection FEFO
         let batchId: string | null = null;
@@ -99,6 +120,9 @@ export class SalesRepository {
           await client.query('UPDATE product_batches SET quantity = quantity - $1 WHERE id=$2', [take, b.id]);
           remaining -= take;
           if (!batchId) batchId = b.id;
+        }
+        if (batches.length > 0 && remaining > 0) {
+          throw new ValidationError(`Lotes insuficientes para ${p.name}`);
         }
         await client.query(
           `INSERT INTO sale_items (sale_id,product_id,batch_id,quantity,unit_price,discount,tax_rate,total) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
@@ -124,6 +148,14 @@ export class SalesRepository {
 
       // cash movement if cash session
       if (data.cashSessionId) {
+        const { rows: cashSession } = await client.query(
+          `SELECT cs.id FROM cash_sessions cs
+           JOIN cash_registers cr ON cr.id=cs.cash_register_id
+           JOIN branches b ON b.id=cr.branch_id
+           WHERE cs.id=$1 AND cs.status='open' AND b.business_id=$2 AND cr.branch_id=$3`,
+          [data.cashSessionId, data.businessId, data.branchId],
+        );
+        if (cashSession.length === 0) throw new ValidationError('Sesión de caja no válida');
         await client.query(
           `INSERT INTO cash_movements (cash_session_id,type,amount,reason,reference_type,reference_id,user_id) VALUES ($1,'sale',$2,'Venta POS','sale',$3,$4)`,
           [data.cashSessionId, total, sale.id, data.userId || null],
@@ -134,13 +166,13 @@ export class SalesRepository {
       await client.query('INSERT INTO outbox_events (aggregate_type,aggregate_id,event_type,payload) VALUES ($1,$2,$3,$4)', ['sale', sale.id, 'sale.completed', JSON.stringify({ saleId: sale.id, total })]);
 
       // idempotency store
-      if (data.idempotencyKey) {
+      if (scopedIdempotencyKey) {
         const response = { saleId: sale.id, total, status: 'completed' };
-        await client.query('INSERT INTO idempotency_keys (key,response) VALUES ($1,$2)', [data.idempotencyKey, JSON.stringify(response)]);
+        await client.query('INSERT INTO idempotency_keys (key,response) VALUES ($1,$2)', [scopedIdempotencyKey, JSON.stringify(response)]);
       }
 
       await client.query('COMMIT');
-      const full = await this.findById(sale.id);
+      const full = await this.findById(sale.id, data.businessId);
       return full;
     } catch (e) {
       await client.query('ROLLBACK');
@@ -150,11 +182,14 @@ export class SalesRepository {
     }
   }
 
-  async refund(data: { saleId: string; userId?: string; reason?: string; items: { saleItemId: string; quantity: number }[] }) {
+  async refund(data: { saleId: string; userId?: string; reason?: string; items: { saleItemId: string; quantity: number }[]; businessId?: string }) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const { rows: saleRows } = await client.query('SELECT * FROM sales WHERE id=$1 FOR UPDATE', [data.saleId]);
+      const params: any[] = [data.saleId];
+      let where = 'WHERE id=$1';
+      if (data.businessId) { params.push(data.businessId); where += ` AND business_id=$${params.length}`; }
+      const { rows: saleRows } = await client.query(`SELECT * FROM sales ${where} FOR UPDATE`, params);
       const sale = saleRows[0];
       if (!sale) throw new Error('Venta no encontrada');
       let total = 0;

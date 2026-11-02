@@ -23,11 +23,12 @@ export class ProductRepository {
     params.push(limit, offset);
     const { rows } = await pool.query(
       `SELECT p.*, c.name as category_name,
-        COALESCE(i.quantity,0) as stock
+        COALESCE(SUM(i.quantity),0) as stock
        FROM products p
        LEFT JOIN categories c ON c.id=p.category_id
        LEFT JOIN inventory i ON i.product_id=p.id
        ${where}
+       GROUP BY p.id, c.name
        ORDER BY p.created_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
@@ -35,10 +36,13 @@ export class ProductRepository {
     return { data: rows, total: Number(countRes.rows[0].count), page, limit };
   }
 
-  async findById(id: string) {
+  async findById(id: string, businessId?: string) {
+    const params: any[] = [id];
+    let where = 'WHERE p.id=$1';
+    if (businessId) { params.push(businessId); where += ` AND p.business_id=$${params.length}`; }
     const { rows } = await pool.query(
-      `SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON c.id=p.category_id WHERE p.id=$1`,
-      [id],
+      `SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON c.id=p.category_id ${where}`,
+      params,
     );
     return rows[0] || null;
   }
@@ -61,7 +65,7 @@ export class ProductRepository {
     return rows[0];
   }
 
-  async update(id: string, data: any) {
+  async update(id: string, data: any, businessId?: string) {
     const fields: string[] = [];
     const params: any[] = [];
     const map: Record<string, string> = {
@@ -75,16 +79,21 @@ export class ProductRepository {
         fields.push(`${col}=$${params.length}`);
       }
     }
-    if (fields.length === 0) return this.findById(id);
+    if (fields.length === 0) return this.findById(id, businessId);
     params.push(id);
+    let where = `id=$${params.length}`;
+    if (businessId) { params.push(businessId); where += ` AND business_id=$${params.length}`; }
     const { rows } = await pool.query(
-      `UPDATE products SET ${fields.join(',')}, updated_at=NOW() WHERE id=$${params.length} RETURNING *`,
+      `UPDATE products SET ${fields.join(',')}, updated_at=NOW() WHERE ${where} RETURNING *`,
       params,
     );
     return rows[0] || null;
   }
 
-  async softDelete(id: string) {
-    await pool.query('UPDATE products SET is_active=false, updated_at=NOW() WHERE id=$1', [id]);
+  async softDelete(id: string, businessId?: string) {
+    const params: any[] = [id];
+    let where = 'id=$1';
+    if (businessId) { params.push(businessId); where += ` AND business_id=$${params.length}`; }
+    await pool.query(`UPDATE products SET is_active=false, updated_at=NOW() WHERE ${where}`, params);
   }
 }
