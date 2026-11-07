@@ -13,6 +13,10 @@ build/
 backend.log
 frontend.log
 
+# Playwright
+frontend/test-results/
+frontend/playwright-report/
+
 # Docker
 pgdata/
 

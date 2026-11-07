@@ -9,13 +9,13 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('products page loads and shows table', async ({ page }) => {
-  await page.click('a:has-text("Productos")');
+  await page.goto('/products');
   await expect(page.locator('h1:has-text("Productos")')).toBeVisible();
   await expect(page.locator('table')).toBeVisible();
 });
 
 test('create product via form', async ({ page }) => {
-  await page.click('a:has-text("Productos")');
+  await page.goto('/products');
   await page.click('button:has-text("Nuevo producto")');
   const sku = `E2E-${Date.now()}`;
   await page.fill('input[placeholder="SKU"]', sku);

@@ -9,6 +9,6 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('POS page loads', async ({ page }) => {
-  await page.click('a:has-text("Punto de Venta")');
+  await page.goto('/pos');
   await expect(page.locator('input[placeholder^="Buscar producto"]')).toBeVisible();
 });

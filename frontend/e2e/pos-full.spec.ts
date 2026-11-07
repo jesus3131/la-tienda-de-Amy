@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('POS full sale flow', async ({ page }) => {
-  await page.click('a:has-text("Punto de Venta")');
+  await page.goto('/pos');
   // Wait for products to load
   await page.waitForSelector('button:has-text("Taza de ceramica")', { timeout: 10000 });
   // Add product to cart

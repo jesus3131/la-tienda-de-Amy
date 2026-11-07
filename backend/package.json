@@ -11,6 +11,7 @@
     "backup": "tsx src/scripts/backup.ts",
     "restore": "tsx src/scripts/restore.ts",
     "verify-migration": "tsx src/scripts/verify-migration.ts",
+    "test-connection": "tsx src/scripts/test-connection.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

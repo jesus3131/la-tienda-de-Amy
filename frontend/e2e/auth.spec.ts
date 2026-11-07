@@ -6,7 +6,7 @@ test('login with valid credentials', async ({ page }) => {
   await page.fill('input[placeholder="Password"]', 'admin123');
   await page.click('button:has-text("Ingresar")');
   await page.waitForURL('**/');
-  await expect(page.locator('text=Dashboard')).toBeVisible();
+  await expect(page.locator('h1:has-text("Dashboard")')).toBeVisible();
 });
 
 test('login with invalid credentials shows error', async ({ page }) => {

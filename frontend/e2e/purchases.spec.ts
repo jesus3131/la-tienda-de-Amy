@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('purchases page loads', async ({ page }) => {
-  await page.click('a:has-text("Compras")');
+  await page.goto('/purchases');
   await expect(page.locator('h1:has-text("Compras")')).toBeVisible();
   await expect(page.locator('table')).toBeVisible();
 });
